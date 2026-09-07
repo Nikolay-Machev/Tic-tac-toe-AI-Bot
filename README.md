@@ -1,20 +1,33 @@
-# Tic-Tac-Toe AI — Neural Network from Scratch
+# AI Tic-Tac-Toe Bot
 
-I built this fully connected neural network using **NumPy and linear algebra only**—no PyTorch, TensorFlow, Keras, or autograd. I trained it on minimax-labelled board positions, and you can play against the resulting model directly in the terminal.
+I built a neural network from scratch using only NumPy—no PyTorch, TensorFlow, Keras, or autograd—and trained it to play optimal tic-tac-toe. You can play against the trained model directly in your terminal.
 
-## What I implemented
+**[Dataset available in CSV](tictactoe_moves.csv)**
 
-- He initialization, ReLU activations, and a numerically stable softmax
-- Categorical cross-entropy and backpropagation implemented by hand
-- Multiple equally optimal targets per board position
-- Model serialization with NumPy's compressed `.npz` format
-- Legal-move masking so the model never selects an occupied cell
-- Reproducible training/evaluation and dependency-free unit tests
-- Exhaustive game-tree verification against every possible human strategy
+## How it works
 
-I represent each input using the nine-cell board plus the player to move. I encode X as `1`, O as `-1`, and an empty cell as `0`. The network produces a probability distribution over all nine possible moves.
+1. **Training data** — I use 4,520 legal, non-terminal tic-tac-toe board states labelled with their game-theoretically optimal moves. When several moves are equally optimal, I retain all of them instead of arbitrarily favoring one.
+2. **Model** — I implemented the complete feedforward neural network myself, including He initialization, forward propagation, ReLU activations, softmax, categorical cross-entropy, and backpropagation. The board and current player form the input, and the network treats the possible moves as a nine-class classification problem.
+3. **Play** — `main.py` loads the trained weights and lets you play against the model move by move. I mask occupied cells during inference, so the model always chooses a legal move.
 
-## Quick start
+The included model selects an optimal move on **99.38% of all 4,520 labelled states**. I also exhaustively traversed every possible human response and confirmed that a human cannot force a win as either X or O against its deterministic policy.
+
+## Project structure
+
+```text
+├── NeuralNetwork.py        # Forward pass, backpropagation, prediction, and save/load
+├── train.py                # Reproducible dataset loading, training, and evaluation
+├── evaluate.py             # Full-state metrics and exhaustive game-tree verification
+├── test_project.py         # Dependency-free regression tests
+├── tictactoe_moves.csv     # Board states and their minimax-optimal moves
+├── models/
+│   └── tictactoe.npz       # Saved trained weights
+├── main.py                 # Terminal game
+├── requirements.txt        # Python dependency list
+└── README.md
+```
+
+## Setup
 
 ```bash
 git clone https://github.com/Nikolay-Machev/Tic-tac-toe-AI-Bot.git
@@ -22,55 +35,39 @@ cd Tic-tac-toe-AI-Bot
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+## Usage
+
+**Play against the included model:**
+
+```bash
 python main.py
 ```
 
-Choose X or O, then enter the number of an empty square. I also added `q` as a quick way to leave the game.
+Choose X or O, enter the number of an empty square, or enter `q` to quit.
 
-## Train it yourself
-
-I included a trained model so the project is ready to play immediately. To reproduce it from the labelled positions:
+**Train the model yourself:**
 
 ```bash
 python train.py
 ```
 
-My training script reports held-out **optimal-move accuracy**. I count a prediction as correct when it belongs to the complete set of minimax-optimal moves, rather than requiring it to match only the dataset's first move.
-
-The model I included scores **99.38% across all 4,520 labelled states**. I also exhaustively traversed the game tree and confirmed that a human cannot force a win as either X or O against its deterministic policy.
+You can also change the training configuration from the command line:
 
 ```bash
 python train.py --iterations 6000 --hidden-neurons 192 --learning-rate 0.2 --seed 7
-python main.py --model models/tictactoe.npz --symbol X
 ```
 
-## Test
+## Testing
 
 ```bash
 python -m unittest -v
 python evaluate.py
 ```
 
-The tests I added cover game results, legal moves, occupied-cell masking, probability normalization, and exact model save/load reproduction.
-
-## Project layout
-
-```text
-NeuralNetwork.py      NumPy forward pass, backpropagation, inference, save/load
-main.py               Terminal game and legal-move handling
-train.py              Dataset loading, training, and evaluation
-evaluate.py           Full-state metrics and exhaustive game-tree verification
-test_project.py       Standard-library unit tests
-tictactoe_moves.csv   4,520 minimax-labelled non-terminal positions
-models/               Trained model ready for terminal play
-```
-
-## Dataset and honest scope
-
-I train against a CSV containing legal non-terminal board states and every optimal move available to the player whose turn it is. By keeping tied optimal moves, I avoid penalizing the network for choosing one correct move instead of another.
-
-Tic-tac-toe is small enough to solve exactly with minimax. I built this as an educational model to demonstrate how a neural network can approximate an optimal policy from labelled examples, not to claim that it can outperform the exact solver.
+The tests cover win and draw detection, legal moves, occupied-cell masking, probability normalization, and exact model save/load reproduction.
 
 ## License
 
-MIT
+This project is licensed under the MIT License—see the [LICENSE](LICENSE) file for details.
