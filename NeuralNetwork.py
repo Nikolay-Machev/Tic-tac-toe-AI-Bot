@@ -1,152 +1,137 @@
+"""A small fully connected classifier implemented only with NumPy."""
+
+from pathlib import Path
+from typing import Iterable, Sequence
 import numpy as np
 
+
 class NeuralNetwork:
+    """Multi-layer perceptron with ReLU activations and softmax output."""
 
-    def __init__(self,hidden_layers=2, lr=0.01, layer_neurons=8, n_iters=100, final_neurons=9):
-        self.hidden_layers = hidden_layers
-        self.lr = lr
-        self.nuerons = layer_neurons
-        self.bias = [
-            np.zeros((self.nuerons, 1))
-            for _ in range(self.hidden_layers)
-        ]
-        self.final_neurons = final_neurons
-        self.bias.append(np.zeros((self.final_neurons, 1)))
-        self.n_iters = n_iters
-    
-    def _init_weights(self, X):
-        self.weights = [
-            np.random.randn(self.nuerons, X.shape[1] if i == 0 else self.nuerons)
-            * np.sqrt(2 / (X.shape[1] if i == 0 else self.nuerons))
-            for i in range(self.hidden_layers)
-        ]
-        self.weights.append(
-            np.random.randn(self.final_neurons, self.nuerons) * 0.01
-        )
+    def __init__(self, hidden_layers=1, lr=0.1, layer_neurons=128,
+                 n_iters=2_000, final_neurons=9, random_state=42):
+        if hidden_layers < 1 or layer_neurons < 1 or final_neurons < 2:
+            raise ValueError("invalid layer size")
+        self.hidden_layers, self.lr = hidden_layers, lr
+        self.neurons = self.nuerons = layer_neurons  # old-name compatibility
+        self.n_iters, self.final_neurons = n_iters, final_neurons
+        self.random_state = random_state
+        self.weights, self.biases, self.loss_history = [], [], []
 
-    def fit(self, X, y,multi = False):
-        X = np.array(X, dtype=float)
+    @property
+    def bias(self):
+        return self.biases
 
-        if multi:
-            y = np.asarray(y)     
-        else:
-            y = np.asarray(y).reshape(-1)   
+    @bias.setter
+    def bias(self, value):
+        self.biases = value
 
-        self._init_weights(X)
-        self.m = X.shape[0]
+    def _init_weights(self, input_features):
+        rng = np.random.default_rng(self.random_state)
+        sizes = [input_features] + [self.neurons] * self.hidden_layers + [self.final_neurons]
+        self.weights, self.biases = [], []
+        for index, (fan_in, fan_out) in enumerate(zip(sizes[:-1], sizes[1:])):
+            scale = np.sqrt((1.0 if index == len(sizes) - 2 else 2.0) / fan_in)
+            self.weights.append(rng.standard_normal((fan_out, fan_in)) * scale)
+            self.biases.append(np.zeros((fan_out, 1)))
 
-        for enum in range(self.n_iters):
-            layers_data, z_data = self._forward(X)
-            probs = self.softmax(layers_data[-1])
-            self._backward(layers_data, z_data, probs, y, multi=multi)
-
-            #if enum % 100 == 0:
-                #y_onehot = self._one_hot(y)
-                #probs_clipped = np.clip(probs, 1e-15, 1 - 1e-15)
-                #loss = -np.sum(y_onehot * np.log(probs_clipped)) / self.m
-                #print(enum, loss)
-
+    def fit(self, X: Sequence[Sequence[float]], y: Iterable, multi=False):
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2 or not len(X):
+            raise ValueError("X must be a non-empty 2D array")
+        rows = list(y)
+        targets = self._multi_hot(rows) if multi else self._one_hot(np.asarray(rows, dtype=int))
+        if targets.shape[1] != len(X):
+            raise ValueError("X and y must have the same length")
+        self._init_weights(X.shape[1])
+        self.loss_history = []
+        for iteration in range(self.n_iters):
+            activations, pre_activations = self._forward(X)
+            probabilities = self.softmax(activations[-1])
+            if iteration == 0 or (iteration + 1) % 100 == 0 or iteration == self.n_iters - 1:
+                clipped = np.clip(probabilities, 1e-12, 1.0)
+                self.loss_history.append(float(-np.sum(targets * np.log(clipped)) / len(X)))
+            self._backward(activations, pre_activations, probabilities, targets, len(X))
         return self
-    
-    def _forward(self,X):
-        layers_data = [X.T]
-        z_data = []
 
-        for i in range(self.hidden_layers + 1):
-            z = np.dot(self.weights[i], layers_data[i]) + self.bias[i]
-            z_data.append(z)
+    def _forward(self, X):
+        if not self.weights:
+            raise RuntimeError("fit or load the model before prediction")
+        activations, pre_activations = [X.T], []
+        for index, (weights, bias) in enumerate(zip(self.weights, self.biases)):
+            z = weights @ activations[-1] + bias
+            pre_activations.append(z)
+            activations.append(z if index == len(self.weights) - 1 else self.relu(z))
+        return activations, pre_activations
 
-            if i == self.hidden_layers:
-                a = z  # no activation on output layer
-            else:
-                a = self.ReLU(z)
+    def _backward(self, activations, pre_activations, probabilities, targets, sample_count):
+        delta, gradients = probabilities - targets, []
+        for index in reversed(range(len(self.weights))):
+            gradients.append((delta @ activations[index].T / sample_count,
+                              np.mean(delta, axis=1, keepdims=True)))
+            if index:
+                delta = (self.weights[index].T @ delta) * (pre_activations[index - 1] > 0)
+        for index, (d_weights, d_bias) in enumerate(reversed(gradients)):
+            self.weights[index] -= self.lr * d_weights
+            self.biases[index] -= self.lr * d_bias
 
-            layers_data.append(a)
+    @staticmethod
+    def relu(values):
+        return np.maximum(0.0, values)
 
-        return layers_data, z_data
-    
-    def _backward(self,layers_data,z_data,probs,y,multi = False):
+    ReLU = relu
 
-        if multi:
-            y_onehot = self._one_hot_multi(y)
-        else:
-            y_onehot = self._one_hot(y)
-            
-        probs_clipped = np.clip(probs, 1e-15, 1.0 - 1e-15)
-        ce = -np.sum(y_onehot * np.log(probs_clipped)) / self.m
-
-        dZ_last = probs - y_onehot
-
-        for i in reversed(range(self.hidden_layers + 1)):
-            data = layers_data[i]
-            w = self.weights[i]
-
-            dW = np.dot(dZ_last, data.T) / self.m
-            db = np.sum(dZ_last, axis=1, keepdims=True) / self.m
-            dA = np.dot(w.T, dZ_last)
-
-            if i != 0:  
-                z = z_data[i - 1]
-                relu_derivative = (z > 0).astype(float)
-                dZ_last = dA * relu_derivative
-                
-            self.weights[i] = self.weights[i] - self.lr*(dW)
-            self.bias[i] = self.bias[i] - self.lr*(db)
-    
-    def ReLU(self,x):
-        return np.maximum(0,x)
-    
     def _one_hot(self, y):
-        m = len(y)
-        y_onehot = np.zeros((self.final_neurons, m))
-        y_onehot[y, np.arange(m)] = 1
-        return y_onehot
-    
-    def _one_hot_multi(self, best_moves_all_col):
-        m = len(best_moves_all_col)
-        y_onehot = np.zeros((self.final_neurons, m))
+        if np.any((y < 0) | (y >= self.final_neurons)):
+            raise ValueError("target class is outside output range")
+        result = np.zeros((self.final_neurons, len(y)))
+        result[y, np.arange(len(y))] = 1.0
+        return result
 
-        for j, cell in enumerate(best_moves_all_col):
-            moves = [int(x) for x in str(cell).split(";")]
-            y_onehot[moves, j] = 1.0 / len(moves)  
+    def _multi_hot(self, labels):
+        result = np.zeros((self.final_neurons, len(labels)))
+        for column, label in enumerate(labels):
+            moves = ([int(move) for move in label.split(";")] if isinstance(label, str)
+                     else [int(label)] if np.isscalar(label) else [int(move) for move in label])
+            if not moves or any(move < 0 or move >= self.final_neurons for move in moves):
+                raise ValueError(f"invalid target moves: {moves}")
+            result[moves, column] = 1.0 / len(moves)
+        return result
 
-        return y_onehot
-    
-    def softmax(self, z):
-        z_shifted = z - np.max(z, axis=0, keepdims=True)
-        exp_z = np.exp(z_shifted)
-        return exp_z / np.sum(exp_z, axis=0, keepdims=True)
+    @staticmethod
+    def softmax(logits):
+        shifted = logits - np.max(logits, axis=0, keepdims=True)
+        exponentials = np.exp(shifted)
+        return exponentials / np.sum(exponentials, axis=0, keepdims=True)
 
-    def _get_y_hat(self, probs):
-        return np.argmax(probs, axis=0)
+    def predict_proba(self, X):
+        X = np.asarray(X, dtype=float)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        activations, _ = self._forward(X)
+        return self.softmax(activations[-1]).T
 
     def predict(self, X):
-        X = np.array(X, dtype=float)       
-        layers_data, _ = self._forward(X)
-        probs = self.softmax(layers_data[-1])
-        y_hat = self._get_y_hat(probs)
-        return y_hat
-    
+        return np.argmax(self.predict_proba(X), axis=1)
+
     def save(self, path):
-        
-        np.savez(
-            path,
-            hidden_layers=self.hidden_layers,
-            neurons=self.nuerons,
-            final_neurons=self.final_neurons,
-            **{f"W{i}": w for i, w in enumerate(self.weights)},
-            **{f"b{i}": b for i, b in enumerate(self.bias)},
-        )
+        if not self.weights:
+            raise RuntimeError("cannot save an unfitted model")
+        destination = Path(path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(destination, hidden_layers=self.hidden_layers,
+            neurons=self.neurons, final_neurons=self.final_neurons,
+            random_state=-1 if self.random_state is None else self.random_state,
+            **{f"W{i}": value for i, value in enumerate(self.weights)},
+            **{f"b{i}": value for i, value in enumerate(self.biases)})
 
     @classmethod
     def load(cls, path):
-        data = np.load(path)
-        model = cls(
-            hidden_layers=int(data["hidden_layers"]),
-            layer_neurons=int(data["neurons"]),
-            final_neurons=int(data["final_neurons"]),
-        )
-
-        model.weights = [data[f"W{i}"] for i in range(model.hidden_layers + 1)]
-        model.bias = [data[f"b{i}"] for i in range(model.hidden_layers + 1)]
+        with np.load(path) as data:
+            seed = int(data["random_state"]) if "random_state" in data else 42
+            model = cls(hidden_layers=int(data["hidden_layers"]),
+                layer_neurons=int(data["neurons"]), final_neurons=int(data["final_neurons"]),
+                random_state=None if seed == -1 else seed)
+            model.weights = [data[f"W{i}"].copy() for i in range(model.hidden_layers + 1)]
+            model.biases = [data[f"b{i}"].copy() for i in range(model.hidden_layers + 1)]
         return model
