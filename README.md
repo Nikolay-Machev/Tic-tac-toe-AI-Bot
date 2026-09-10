@@ -1,5 +1,7 @@
 # AI Tic-Tac-Toe Bot
 
+[![Tests](https://github.com/Nikolay-Machev/Tic-tac-toe-AI-Bot/actions/workflows/tests.yml/badge.svg)](https://github.com/Nikolay-Machev/Tic-tac-toe-AI-Bot/actions/workflows/tests.yml)
+
 I built a neural network from scratch using only NumPy—no PyTorch, TensorFlow, Keras, or autograd—and trained it to play optimal tic-tac-toe. You can play against the trained model directly in your terminal.
 
 **[Dataset available in CSV](tictactoe_moves.csv)**
@@ -11,6 +13,19 @@ I built a neural network from scratch using only NumPy—no PyTorch, TensorFlow,
 3. **Play** — `main.py` loads the trained weights and lets you play against the model move by move. I mask occupied cells during inference, so the model always chooses a legal move.
 
 The included model selects an optimal move on **99.38% of all 4,520 labelled states**. I also exhaustively traversed every possible human response and confirmed that a human cannot force a win as either X or O against its deterministic policy.
+
+## What this project demonstrates
+
+- Implementing and debugging a neural network without an ML framework
+- Converting game-theoretic supervision into a multiclass learning problem
+- Testing learned behavior with regression tests and exhaustive game-tree verification
+
+## Results
+
+| Evaluation | Result | Interpretation |
+|---|---:|---|
+| All 4,520 labelled legal, non-terminal states | 99.38% optimal-move accuracy | Measures agreement with the complete set of minimax-optimal moves |
+| Exhaustive play as X and O | No forced human win | Verifies the included model's deterministic policy across every possible human response |
 
 ## Project structure
 
@@ -71,3 +86,7 @@ The tests cover win and draw detection, legal moves, occupied-cell masking, prob
 ## License
 
 This project is licensed under the MIT License—see the [LICENSE](LICENSE) file for details.
+
+## Machine-learning portfolio
+
+Part of my machine-learning portfolio, spanning models built from scratch, [computer vision](https://github.com/Nikolay-Machev/Melanoma-Classification), and [scientific machine learning](https://github.com/Nikolay-Machev/Qsar-Solubility-Predictor).
